@@ -1,0 +1,14 @@
+credentials:
+  usernames:
+    user1:
+      email: user1@example.com
+      name: John Doe
+      password: $2b$12$B9aVcAEE51UhsQ1Ew49htuuB73FrqEP42dhBOE4K6cbMSEEp5wxsi
+    user2:
+      email: user2@example.com
+      name: Jane Doe
+      password: $2b$12$INS2VlWIcVJyrohD5bD3HuErt8cp/iFUEP0bBUYIjCah.SLfLBO4O
+cookie:
+  name: financepro_cookie
+  key: some_random_key
+  expiry_days: 30
