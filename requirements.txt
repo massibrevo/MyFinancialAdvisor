@@ -9,3 +9,4 @@ setuptools>=65.0
 torch==2.0.1
 tensorflow==2.13.0
 transformers==4.33.2
+openai==1.59.3

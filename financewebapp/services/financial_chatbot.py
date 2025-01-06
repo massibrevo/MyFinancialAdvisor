@@ -1,80 +1,60 @@
 import streamlit as st
-import threading
-from transformers import AutoTokenizer, AutoModelForCausalLM, TextIteratorStreamer
+import openai
 
-# ------------------
-# 1. Model Loading
-# ------------------
-@st.cache_resource
-def load_model():
+# -------------------------------------
+# 1. OpenAI Stream Helper Function
+# -------------------------------------
+def openai_stream(messages, model="gpt-3.5-turbo", temperature=0.7):
     """
-    Loads the model and tokenizer once and caches them.
+    Calls the OpenAI ChatCompletion endpoint in streaming mode.
+    Yields chunks of text as tokens are generated.
     """
-    model_name = "EleutherAI/gpt-neo-1.3B"
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_pretrained(model_name)
-    return model, tokenizer
-
-# ---------------------------
-# 2. Streaming Generate Logic
-# ---------------------------
-def generate_stream(
-    prompt: str, 
-    model, 
-    tokenizer, 
-    max_new_tokens: int = 150
-):
-    """
-    Generates text from the model token-by-token using TextIteratorStreamer.
-    Yields partial text as it is generated.
-    """
-    # Create a streamer that yields new tokens one at a time.
-    streamer = TextIteratorStreamer(
-        tokenizer, 
-        skip_prompt=True, 
-        skip_special_tokens=True
+    response = openai.ChatCompletion.create(
+        model=model,
+        messages=messages,
+        temperature=temperature,
+        stream=True
     )
+    # Stream the response chunks
+    for chunk in response:
+        if "choices" in chunk:
+            delta = chunk["choices"][0].get("delta", {})
+            if "content" in delta:
+                yield delta["content"]
 
-    # Prepare the input tensor.
-    input_ids = tokenizer.encode(prompt, return_tensors="pt").to(model.device)
-
-    # Define the generation in a thread so we can iterate over tokens in the main thread.
-    def threaded_generation():
-        model.generate(
-            input_ids=input_ids,
-            max_new_tokens=max_new_tokens,
-            do_sample=True,
-            streamer=streamer
-        )
-
-    # Run generation in a separate thread.
-    thread = threading.Thread(target=threaded_generation)
-    thread.start()
-
-    # Collect tokens as they stream in, building partial_text gradually.
-    partial_text = ""
-    for new_text in streamer:
-        partial_text += new_text
-        yield partial_text
-
-    # Ensure the generation thread finishes.
-    thread.join()
-
-
-# -----------------------
-# 3. Financial Chatbot UI
-# -----------------------
+# -------------------------------
+# 2. Main Financial Chatbot Page
+# -------------------------------
 def show_financial_chatbot():
     st.title("💬 Financial Chatbot")
     st.write("Ask any financial-related question, and our chatbot will assist you.")
 
-    # Initialize or retrieve session state
+    # --- A) Check or get API key ---
+    # If not stored in session, create a placeholder for it
+    if "api_key" not in st.session_state:
+        st.session_state.api_key = ""
+    # Ask user for the API key
+    st.session_state.api_key = st.text_input(
+        "Enter your OpenAI API Key:",
+        value=st.session_state.api_key,
+        type="password",  # Hide the input
+    )
+    # If no key, stop here
+    if not st.session_state.api_key:
+        st.warning("Please enter your OpenAI API key to continue.")
+        return
+
+    # Set the OpenAI key
+    openai.api_key = st.session_state.api_key
+
+    # --- B) Session Initialization ---
     if "conversation" not in st.session_state:
+        # We'll store the conversation as a list of {"role": "...", "content": "..."}
         st.session_state.conversation = []
     if "question_count" not in st.session_state:
         st.session_state.question_count = 0
 
-    # 3a. Apply some custom CSS to mimic ChatGPT’s style
+    # --- C) Chat Display CSS ---
     st.markdown(
         """
         <style>
@@ -113,7 +93,7 @@ def show_financial_chatbot():
         unsafe_allow_html=True
     )
 
-    # 3b. Display the conversation so far
+    # --- D) Display the Conversation ---
     st.markdown('<div class="chat-container">', unsafe_allow_html=True)
     for msg in st.session_state.conversation:
         if msg["role"] == "user":
@@ -128,14 +108,14 @@ def show_financial_chatbot():
             )
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # 3c. Input area to type the question
+    # --- E) User Input ---
     user_input = st.text_area(
-        label="", 
-        placeholder="💬 Type your financial question here...", 
-        height=80  # Must be >= 68
+        label="",
+        placeholder="💬 Type your financial question here...",
+        height=80  # must be >= 68
     )
 
-    # 3d. "Send" button
+    # --- F) "Send" Button ---
     send_clicked = st.button("Send")
     if send_clicked:
         if not user_input.strip():
@@ -143,41 +123,44 @@ def show_financial_chatbot():
         elif st.session_state.question_count >= 5:
             st.error("You have reached the maximum of 5 questions per session. Reset to start a new session.")
         else:
-            # Record the user's message
+            # 1) Add user message to conversation
             st.session_state.conversation.append({"role": "user", "content": user_input})
             st.session_state.question_count += 1
 
-            # Partial streaming output
+            # 2) Stream the response
             with st.spinner("Generating response..."):
-                model, tokenizer = load_model()
-                placeholder = st.empty()  # We'll update this container as tokens arrive
+                # Prepare a new list of messages for OpenAI: system + the entire conversation
+                # Optionally, you can add a system message for context (like "You are a helpful financial expert...").
+                openai_messages = [{"role": msg["role"], "content": msg["content"]} for msg in st.session_state.conversation]
+
+                # Placeholder for partial streaming
+                placeholder = st.empty()
                 partial_text = ""
 
-                for tokenized_text in generate_stream(user_input, model, tokenizer):
-                    partial_text = tokenized_text
-                    # Replace the placeholder content with the latest partial text
-                    # (wrapped in assistant-message styling)
+                for chunk_text in openai_stream(openai_messages):
+                    partial_text += chunk_text
+                    # Update placeholder with the latest partial answer
                     placeholder.markdown(
-                        f'<div class="message assistant-message">{partial_text}</div>', 
+                        f'<div class="message assistant-message">{partial_text}</div>',
                         unsafe_allow_html=True
                     )
 
-                # Once generation is done, store the final partial_text in session
+                # Once complete, add the fully formed assistant message to the conversation
                 st.session_state.conversation.append({"role": "assistant", "content": partial_text.strip()})
 
-            # Force immediate UI refresh to show the complete conversation
-            st.stop() # testing instead of st.experimental_rerun()
+            # Force immediate UI update
+            st.experimental_rerun()
 
-    # 3e. "Reset Chat" button
+    # --- G) "Reset Chat" Button ---
     reset_clicked = st.button("Reset Chat")
     if reset_clicked:
         st.session_state.conversation = []
         st.session_state.question_count = 0
-        # IMPORTANT: Do NOT overwrite st.session_state.user_input here
-        # Instead, we rely on st.experimental_rerun() to clear text_area next run
-        st.stop() # testing instead of st.experimental_rerun()
+        # We do NOT assign st.session_state.api_key = "" unless you want to forcibly clear user’s key
+        # We'll just re-run the script so the user sees a fresh conversation
+        st.experimental_rerun()
 
-    # 3f. Disclaimer
+    # --- H) Disclaimer ---
     st.markdown("---")
     st.caption(
         "**Disclaimer**: This chatbot provides general financial information and is "
@@ -185,7 +168,8 @@ def show_financial_chatbot():
         "certified financial advisor for guidance specific to your situation."
     )
 
-# 4. Main entry point for Streamlit
+
+# 3. Main entry point
 def main():
     show_financial_chatbot()
 
