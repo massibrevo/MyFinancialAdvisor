@@ -6,7 +6,6 @@ plotly==5.14.1
 xlsxwriter==3.1.2
 PyYAML==6.0
 transformers==4.47.1
-llama_stack==0.0.
 streamlit==1.40.0
 streamlit-authenticator==0.4.1
 setuptools
