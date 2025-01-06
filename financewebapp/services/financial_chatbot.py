@@ -9,7 +9,7 @@ def openai_stream(messages, model="gpt-3.5-turbo", temperature=0.7):
     Calls the OpenAI ChatCompletion endpoint in streaming mode.
     Yields chunks of text as tokens are generated.
     """
-    response = openai.ChatCompletion.create(
+    response = openai.chat.completions.create(
         model=model,
         messages=messages,
         temperature=temperature,
