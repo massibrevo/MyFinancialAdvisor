@@ -1,3 +1,5 @@
+from io import BytesIO
+
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -89,12 +91,12 @@ def show_finance_pro_planner():
     st.dataframe(df.style.format("{:,.2f}"))
 
     # **Download in Excel**
-    buffer = pd.ExcelWriter("summary.xlsx", engine="xlsxwriter")
-    df.to_excel(buffer, index=False, sheet_name="Summary")
-    buffer.close()
+    buffer = BytesIO()
+    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False, sheet_name="Summary")
     st.download_button(
-        label=["download_excel"],
-        data=open("summary.xlsx", "rb").read(),
+        label="Download Excel",
+        data=buffer.getvalue(),
         file_name="financial_summary.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
