@@ -1,2 +1,7 @@
-
-requirements.txt
+__pycache__/
+*.py[cod]
+.venv/
+.env
+.env.*
+.streamlit/secrets.toml
+.DS_Store

@@ -1,0 +1,59 @@
+.mfa-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: clamp(1.8rem, 5vw, 3.5rem);
+  margin-bottom: 1.7rem;
+  border-radius: 1.4rem;
+  color: #fff;
+  background: radial-gradient(ellipse at 94% -10%, #4338ca 0%, transparent 57%),
+              linear-gradient(112deg, #13142d, #211c59 78%, #251d5d);
+}
+
+.mfa-hero::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -70% -33% -55% 37%;
+  pointer-events: none;
+  background: repeating-radial-gradient(
+    ellipse at 74% 54%, transparent 0 27px, rgba(196, 181, 253, .22) 28px 29px
+  );
+  transform: rotate(-26deg);
+  mask-image: linear-gradient(90deg, transparent 8%, black 48%);
+}
+
+.mfa-hero .mfa-brand {
+  margin-bottom: 1.35rem;
+  color: #d6ceff;
+  font-size: .92rem;
+  font-weight: 650;
+  letter-spacing: .035em;
+}
+
+.mfa-hero h1 {
+  margin: 0;
+  padding: 0;
+  color: #fff;
+  font-size: clamp(2.4rem, 6vw, 5rem);
+  line-height: .99;
+  letter-spacing: -.065em;
+  max-width: 12ch;
+}
+
+.mfa-hero p {
+  margin: 1.5rem 0 0;
+  max-width: 43ch;
+  color: #e5e1fb;
+  font-size: clamp(.95rem, 2vw, 1.12rem);
+  line-height: 1.55;
+}
+
+[data-testid="stMetricValue"] {
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(1rem, 1.7vw, 1.8rem);
+}
+
+[data-testid="stMetric"] {
+  min-width: 0;
+}

@@ -1,53 +1,25 @@
 import streamlit as st
 
-def show_landing_page():
-    # Header Section
-    st.title("🌟 FinancePro Planner 🌟")
-    st.image(
-        "financewebapp/images/finance.jpg",
-        use_container_width=True,
-        caption="FinancePro Planner"
-    )
-    st.write("### Welcome to FinancePro Planner. Optimize your financial future!")
 
-    # Divider
-    st.divider()
-
-    # Key Features Section
-    st.write("## 🚀 Key Features")
-    st.markdown("""
-    - **Smart Financial Planning:** Optimize your investments and achieve your financial goals effortlessly.
-    - **Interactive Simulations:** Visualize different scenarios and make data-driven decisions.
-    - **Beautiful Visualizations:** Track your growth with elegant and insightful charts.
-    - **User-Friendly Chatbot:** Ask financial questions and get instant advice.
+def show_landing_page(pages: list[tuple[object, str, str, str]]) -> None:
+    st.html("""
+        <section class="mfa-hero" aria-labelledby="mfa-home-title">
+          <div class="mfa-brand">MyFinancialAdvisor</div>
+          <h1 id="mfa-home-title">Dai un numero<br>alle tue scelte.</h1>
+          <p>Confronta casa e affitto, simula un mutuo e misura
+             quanto potrebbero valere i tuoi risparmi alla pensione.</p>
+        </section>
     """)
+    st.subheader("Simulatori", anchor=False)
+    columns = st.columns(3, gap="medium")
+    for column, (page, title, description, icon) in zip(columns, pages[:3], strict=True):
+        with column, st.container(border=True):
+            st.page_link(page, label=title, icon=icon)
+            st.caption(description)
 
-    # Divider
-    st.divider()
+    with st.container(border=True):
+        page, title, description, icon = pages[-1]
+        st.page_link(page, label=title, icon=icon)
+        st.caption(description)
 
-    # Call-to-Action Section
-    st.write("## 🏆 Why Choose FinancePro Planner?")
-    st.markdown("""
-    - Achieve financial freedom with tailored planning.
-    - Harness the power of data to grow your wealth.
-    - Plan your future with confidence and clarity.
-    """)
-    st.button("Get Started Now!", type="primary")
-
-    # Testimonials Section
-    st.write("## 🌟 Testimonials")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.image("https://via.placeholder.com/150", caption="Maria, Business Owner")
-        st.write("*'FinancePro Planner transformed my financial strategy. Highly recommend!'*")
-    with col2:
-        st.image("https://via.placeholder.com/150", caption="John, Data Scientist")
-        st.write("*'The best tool for interactive simulations. Brilliant charts and UX!'*")
-
-    # Footer Section
-    st.divider()
-    st.write("💼 Brought to you by **Codicecaffe' Inc.** | Empowering financial growth one plan at a time.")
-    st.caption(
-        "Disclaimer: This app is for simulation purposes only and should not be considered financial advice. "
-        "Always consult a certified financial advisor before making investment decisions."
-    )
+    st.caption("Usa i risultati per confrontare le tue ipotesi. Le simulazioni hanno scopo informativo.")
