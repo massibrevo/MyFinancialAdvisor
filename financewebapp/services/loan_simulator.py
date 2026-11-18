@@ -1,115 +1,66 @@
-import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
+import streamlit as st
+
+from financewebapp.calculations import amortize, monthly_payment
+from financewebapp.ui import chart, euro, page_heading, results_table, save_summary
+
+BALANCE = "Debito residuo"
+INTEREST = "Interessi cumulati"
 
 
-def calculate_loan_schedule(principal, annual_interest_rate, loan_term_years, monthly_extra_payment):
-    """Calculate loan repayment schedule."""
-    monthly_interest_rate = annual_interest_rate / 12 / 100
-    total_months = loan_term_years * 12
+def show_loan_simulation() -> None:
+    page_heading(
+        "Prestiti e mutui",
+        "Simula un finanziamento a tasso fisso e misura quanto tempo e interessi "
+        "puoi risparmiare con un versamento extra.",
+    )
+    controls, results = st.columns([1, 2], gap="large")
+    with controls, st.container(border=True):
+        st.subheader("Finanziamento", anchor=False)
+        principal = st.number_input("Importo (€)", 1.0, 100_000_000.0, 100_000.0, step=1_000.0)
+        rate = st.slider("Tasso nominale annuo (%)", 0.0, 25.0, 5.0, 0.1)
+        years = st.slider("Durata (anni)", 1, 40, 15)
+        extra = st.number_input("Versamento extra mensile (€)", 0.0, 100_000_000.0, 0.0, step=50.0)
 
-    # Monthly payment calculation (Fixed Payment)
-    monthly_payment = principal * (monthly_interest_rate * (1 + monthly_interest_rate) ** total_months) / (
-            (1 + monthly_interest_rate) ** total_months - 1)
-
-    schedule = []
-    remaining_balance = principal
-    total_interest_paid = 0
-
-    for month in range(1, total_months + 1):
-        interest_payment = remaining_balance * monthly_interest_rate
-        principal_payment = monthly_payment - interest_payment
-        total_interest_paid += interest_payment
-        remaining_balance -= principal_payment + monthly_extra_payment
-
-        if remaining_balance < 0:
-            remaining_balance = 0
-
-        schedule.append({
-            "Month": month,
-            "Monthly Payment (€)": monthly_payment + monthly_extra_payment,
-            "Principal Payment (€)": principal_payment + monthly_extra_payment,
-            "Interest Payment (€)": interest_payment,
-            "Remaining Balance (€)": remaining_balance,
-            "Total Interest Paid (€)": total_interest_paid
+    months = years * 12
+    baseline = amortize(principal, rate, months)
+    rows = amortize(principal, rate, months, extra) if extra else baseline
+    interest = rows[-1].cumulative_interest
+    interest_saved = baseline[-1].cumulative_interest - interest
+    months_saved = months - len(rows)
+    payment = monthly_payment(principal, rate, months)
+    with results:
+        regular, total, payoff = st.columns(3)
+        regular.metric("Rata base", euro(payment), border=True)
+        total.metric("Interessi totali", euro(interest), border=True)
+        payoff.metric("Estinzione", f"{len(rows)} mesi", border=True)
+        st.caption(f"Con l’extra risparmi {euro(interest_saved)} di interessi e {months_saved} mesi. "
+                   f"Totale pagato {euro(principal + interest)}.")
+        frame = pd.DataFrame({
+            "Mese": [row.month for row in rows],
+            "Rata effettiva": [row.payment for row in rows],
+            "Quota capitale": [row.principal for row in rows],
+            "Quota interessi": [row.interest for row in rows],
+            BALANCE: [row.balance for row in rows],
+            INTEREST: [row.cumulative_interest for row in rows],
         })
-
-        if remaining_balance == 0:
-            break
-
-    return pd.DataFrame(schedule)
-
-
-def create_loan_chart(schedule):
-    """Create a plotly chart for the loan schedule."""
-    fig = go.Figure()
-
-    fig.add_trace(go.Scatter(
-        x=schedule["Month"],
-        y=schedule["Remaining Balance (€)"],
-        mode="lines",
-        name="Remaining Balance",
-        line=dict(color="blue")
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=schedule["Month"],
-        y=schedule["Total Interest Paid (€)"],
-        mode="lines",
-        name="Total Interest Paid",
-        line=dict(color="red", dash="dash")
-    ))
-
-    fig.update_layout(
-        title="Loan Repayment Schedule",
-        xaxis_title="Months",
-        yaxis_title="Amount (€)",
-        template="plotly_white",
-    )
-
-    return fig
-
-
-def show_loan_simulation():
-    """Display the Loan Simulation tool."""
-    st.title("Loan Simulator")
-    st.write("Simulate your loan repayment schedule and analyze the financial impact of additional payments.")
-
-    # Inputs for loan parameters
-    principal = st.number_input("Loan Amount (€)", min_value=0.0, value=100000.0, step=1000.0)
-    annual_interest_rate = st.slider("Annual Interest Rate (%)", min_value=0.0, max_value=20.0, value=5.0, step=0.1)
-    loan_term_years = st.slider("Loan Term (Years)", min_value=1, max_value=30, value=15, step=1)
-    monthly_extra_payment = st.number_input("Monthly Extra Payment (€)", min_value=0.0, value=0.0, step=100.0)
-
-    # Validate inputs
-    if principal == 0 or loan_term_years == 0:
-        st.warning("Please ensure all inputs are greater than 0.")
-        return
-
-    # Calculate loan schedule
-    schedule = calculate_loan_schedule(principal, annual_interest_rate, loan_term_years, monthly_extra_payment)
-
-    # Display chart
-    fig = create_loan_chart(schedule)
-    st.plotly_chart(fig)
-
-    # Display summary
-    total_months = schedule["Month"].iloc[-1]
-    total_interest_paid = schedule["Total Interest Paid (€)"].iloc[-1]
-    total_paid = schedule["Monthly Payment (€)"].sum()
-
-    st.write("### Loan Summary")
-    st.write(f"**Total Months to Repay:** {total_months}")
-    st.write(f"**Total Interest Paid:** €{total_interest_paid:,.2f}")
-    st.write(f"**Total Amount Paid:** €{total_paid:,.2f}")
-
-    # Display schedule table
-    st.write("### Repayment Schedule")
-    st.dataframe(schedule.style.format("{:,.2f}"))
-
-    # Disclaimer
-    st.write("---")
-    st.caption(
-        "Disclaimer: This tool is for simulation purposes only and should not be considered financial advice. "
-        "Please consult with a financial advisor or loan officer for accurate loan calculations."
-    )
+        comparison = pd.DataFrame({
+            "Mese": range(months + 1),
+            BALANCE: [principal, *(row.balance for row in rows), *([0] * months_saved)],
+            "Senza versamento extra": [principal, *(row.balance for row in baseline)],
+        })
+        series = (BALANCE, "Senza versamento extra") if extra else (BALANCE,)
+        chart(comparison, "Mese", series, title="Andamento del debito residuo")
+        with st.expander("Piano di ammortamento ed esportazione"):
+            results_table(frame, "piano-ammortamento")
+        with st.expander("Come funziona il calcolo"):
+            st.write(
+                "Il tasso mensile è il tasso nominale annuo diviso per dodici. L’extra mensile "
+                "riduce subito il capitale e l’ultima rata è limitata al debito residuo più "
+                "gli interessi del mese. Il calcolo esclude spese accessorie e penali."
+            )
+        save_summary("Prestiti e mutui", (
+            f"Prestito di {euro(principal)} a tasso fisso {rate}%, durata iniziale {months} mesi. "
+            f"Rata base {euro(payment)}, extra mensile {euro(extra)}. Estinzione in {len(rows)} mesi, "
+            f"interessi {euro(interest)} e risparmio {euro(interest_saved)} rispetto al piano base."
+        ))

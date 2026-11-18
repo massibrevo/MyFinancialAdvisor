@@ -1,109 +1,92 @@
-from io import BytesIO
-
-import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
+import streamlit as st
+
+from financewebapp.calculations import HousingScenario, monthly_payment, project_housing
+from financewebapp.ui import chart, euro, page_heading, results_table, save_summary
+
+RENT = "Patrimonio in affitto"
+BUY = "Patrimonio acquistando"
+EQUITY = "Valore netto dell’immobile"
+REAL_RENT = "Affitto in euro di oggi"
+REAL_BUY = "Acquisto in euro di oggi"
 
 
-def create_line_chart(years, investment_value, property_value, benchmark=None):
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=years,
-        y=investment_value,
-        mode='lines+markers',
-        name='Investment Value',
-        line=dict(color='blue')
-    ))
-    fig.add_trace(go.Scatter(
-        x=years,
-        y=property_value,
-        mode='lines+markers',
-        name='Property Value',
-        line=dict(color='green')
-    ))
+def show_finance_pro_planner() -> None:
+    page_heading(
+        "Casa o affitto",
+        "Confronta il patrimonio netto di chi compra casa e di chi resta in affitto, "
+        "partendo dallo stesso capitale e dallo stesso budget mensile.",
+    )
+    controls, results = st.columns([1, 2], gap="large")
+    with controls, st.container(border=True):
+        st.subheader("Ipotesi", anchor=False)
+        years = st.slider("Orizzonte (anni)", 1, 50, 25)
+        savings = st.number_input("Capitale iniziale (€)", 0, 100_000_000, 100_000, step=1_000)
+        budget = st.number_input("Budget mensile prima dell’abitazione (€)", 0, 1_000_000, 2_200, step=100)
+        rent = st.number_input("Affitto mensile (€)", 0, 1_000_000, 1_100, step=50)
+        price = st.number_input("Prezzo dell’immobile (€)", 1, 100_000_000, 350_000, step=5_000)
+        with st.expander("Finanziamento e rendimenti"):
+            down_payment = st.slider("Anticipo (%)", 0, 100, 20)
+            purchase_cost = st.slider("Spese d’acquisto (%)", 0.0, 20.0, 5.0, 0.5)
+            mortgage_rate = st.slider("Tasso fisso del mutuo (%)", 0.0, 20.0, 3.5, 0.1)
+            mortgage_years = st.slider("Durata del mutuo (anni)", 1, 40, 25)
+            maintenance = st.number_input("Spese mensili di proprietà (€)", 0, 1_000_000, 200, step=50)
+            investment_growth = st.slider("Rendimento dell’investimento (%)", -10.0, 20.0, 4.0, 0.1)
+            property_growth = st.slider("Crescita del valore della casa (%)", -10.0, 15.0, 2.0, 0.1)
+            inflation = st.slider("Inflazione annua (%)", 0.0, 15.0, 2.0, 0.1)
 
-    if benchmark:
-        fig.add_trace(go.Scatter(
-            x=years,
-            y=benchmark,
-            mode='lines',
-            name='Benchmark (Inflation)',
-            line=dict(dash='dot', color='red')
+    scenario = HousingScenario(
+        years=years, savings=savings, budget=budget, rent=rent, price=price,
+        down_payment_percent=down_payment, purchase_cost_percent=purchase_cost,
+        maintenance=maintenance, mortgage_rate=mortgage_rate, mortgage_years=mortgage_years,
+        investment_growth=investment_growth, property_growth=property_growth, inflation=inflation,
+    )
+    with results:
+        payment = monthly_payment(scenario.mortgage, mortgage_rate, mortgage_years * 12)
+        try:
+            rows = project_housing(scenario)
+        except ValueError as error:
+            st.session_state.get("simulation_summaries", {}).pop("Casa o affitto", None)
+            st.warning(str(error))
+            st.caption(f"Capitale necessario {euro(scenario.upfront_cost)}. Spesa abitativa "
+                       f"mensile da coprire {euro(max(rent, payment + maintenance))}.")
+            return
+
+        end = rows[-1]
+        st.caption(f"Anticipo e spese {euro(scenario.upfront_cost)} · Rata mutuo {euro(payment)}/mese")
+        nominal = st.segmented_control(
+            "Valuta dei risultati", ["Nominale", "Euro di oggi"],
+            default="Nominale", selection_mode="single", required=True,
+        ) == "Nominale"
+        values = (
+            (end.rent_net_worth, end.buy_net_worth) if nominal else (end.rent_real, end.buy_real)
+        )
+        rent_metric, buy_metric, difference_metric = st.columns(3)
+        rent_metric.metric("Affitto", euro(values[0]), border=True)
+        buy_metric.metric("Acquisto", euro(values[1]), border=True)
+        difference_metric.metric("Acquisto − affitto", euro(values[1] - values[0]), border=True)
+        frame = pd.DataFrame({
+            "Anno": [row.year for row in rows],
+            RENT: [row.rent_net_worth for row in rows],
+            BUY: [row.buy_net_worth for row in rows],
+            EQUITY: [row.buy_home_equity for row in rows],
+            REAL_RENT: [row.rent_real for row in rows],
+            REAL_BUY: [row.buy_real for row in rows],
+        })
+        chart(frame, "Anno", (RENT, BUY) if nominal else (REAL_RENT, REAL_BUY),
+              title="Patrimonio netto nel tempo")
+        with st.expander("Dati ed esportazione"):
+            results_table(frame, "casa-o-affitto")
+        with st.expander("Come funziona il confronto"):
+            st.write(
+                "Ogni mese, entrambi gli scenari investono ciò che resta del budget dopo "
+                "le spese abitative. Nel caso dell’acquisto, il patrimonio include il "
+                "valore della casa meno il debito residuo. Affitto e spese mensili di proprietà "
+                "restano fissi. I risultati ignorano costi di vendita e imposte sui rendimenti."
+            )
+        save_summary("Casa o affitto", (
+            f"Orizzonte {years} anni. Patrimonio nominale in affitto {euro(end.rent_net_worth)}, "
+            f"acquistando {euro(end.buy_net_worth)}. Rendimento annuo {investment_growth}%, "
+            f"crescita immobile {property_growth}%, inflazione {inflation}%. "
+            "Stesso capitale e stesso budget mensile, canone e spese di proprietà fissi."
         ))
-
-    fig.add_trace(go.Scatter(
-        x=[years[-1], years[-1]],
-        y=[investment_value[-1], property_value[-1]],
-        mode='markers+text',
-        name='Final Values',
-        text=[
-            f"€{investment_value[-1]:,.2f}",
-            f"€{property_value[-1]:,.2f}"
-        ],
-        textposition='top center',
-        marker=dict(size=10, color='purple')
-    ))
-
-    fig.update_layout(
-        title="Financial Growth Over Time",
-        xaxis_title="Years",
-        yaxis_title="Value (€)",
-        template="plotly_white",
-    )
-    return fig
-
-
-def show_finance_pro_planner():
-    st.title("FinancePro Planner")
-    st.write("Plan and visualize your financial growth with interactive tools and insights.")
-    
-    # **Formulas in LaTeX**
-    st.subheader("Formulas Used")
-    st.latex(r"Investment\ Value = Initial\ Capital \cdot (1 + Investment\ Rate)^{Years}")
-    st.latex(r"Property\ Value = Property\ Price \cdot (1 + Property\ Growth\ Rate)^{Years}")
-    st.latex(r"Inflation\ Adjusted\ Value = Initial\ Value \cdot (1 + Inflation\ Rate)^{Years}")
-    
-    # **User Inputs**
-    initial_capital = st.number_input("Initial Capital (€)", min_value=0, value=200000)
-    monthly_savings = st.number_input("Monthly Savings (€)", min_value=0, value=600)
-    investment_rate = st.slider("Investment Rate (% per year)", min_value=0.0, max_value=10.0, value=4.0)
-    property_price = st.number_input("Property Price (€)", min_value=0, value=350000)
-    mortgage_rate = st.slider("Mortgage Rate (% per year)", min_value=0.0, max_value=10.0, value=2.5)
-    years = st.slider("Years to Simulate", min_value=5, max_value=50, value=30)
-    inflation_rate = st.slider("Inflation Rate (% per year)", min_value=0.0, max_value=5.0, value=2.0)
-
-    years_range = list(range(1, years + 1))
-    investment_value = [initial_capital * (1 + investment_rate / 100) ** year for year in years_range]
-    property_value = [property_price * (1 + 2.0 / 100) ** year for year in years_range]
-    benchmark = [initial_capital * (1 + inflation_rate / 100) ** year for year in years_range]
-
-    # **Visualization**
-    st.plotly_chart(create_line_chart(years_range, investment_value, property_value, benchmark))
-
-    # **Summary Table**
-    summary_data = {
-        "Years": years_range,
-        "Investment Value (€)": investment_value,
-        "Property Value (€)": property_value,
-        "Benchmark Value (€)": benchmark,
-    }
-    df = pd.DataFrame(summary_data)
-    st.dataframe(df.style.format("{:,.2f}"))
-
-    # **Download in Excel**
-    buffer = BytesIO()
-    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-        df.to_excel(writer, index=False, sheet_name="Summary")
-    st.download_button(
-        label="Download Excel",
-        data=buffer.getvalue(),
-        file_name="financial_summary.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-    
-    # **Legal Disclaimer**
-    st.write("---")
-    st.caption(
-        "Disclaimer: This app is for simulation purposes only and should not be considered financial advice. "
-        "Always consult a certified financial advisor before making investment decisions."
-    )
